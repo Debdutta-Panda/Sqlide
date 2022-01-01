@@ -1,6 +1,7 @@
 package com.debdutta.sqlide
 
 import android.app.Application
+import android.app.DatePickerDialog
 import android.content.Context
 import android.content.Context.MODE_PRIVATE
 import android.database.sqlite.SQLiteDatabase
@@ -10,21 +11,26 @@ import android.database.Cursor
 import android.util.Log
 import java.io.Closeable
 import java.lang.Exception
+import java.time.LocalDate
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 
-typealias Block = Sqlide.() -> Unit
+typealias Block = Sqlide.() -> Any?
 
 
 
-inline fun SQLiteDatabase.transact(block: SQLiteDatabase.() -> Unit): String? {
+inline fun SQLiteDatabase.transact(block: SQLiteDatabase.() -> Any?): Any? {
     beginTransaction()
     return try {
-        block()
-        setTransactionSuccessful()
-        null
+        try {
+            return block()
+        } finally {
+            setTransactionSuccessful()
+        }
     }
     catch(e: Exception){
-        e.message
+        e
     }
     finally {
         endTransaction()
@@ -37,31 +43,14 @@ fun <T> ArrayList<T>.eat(block:(T)->Unit){
     }
 }
 class Sqlide {
-    var errorCallback: ((String)->Unit)? = null
-    private constructor()
-    private var _lastError = ""
-    set(value){
-        field = value
-        if(value.isNotEmpty()){
-            errorCallback?.invoke(value)
-        }
-    }
     private var blocks: ArrayList<Block> = ArrayList()
     private var context: Context? = null
     private var db_name = "sqlide_db"
     private var running: AtomicBoolean = AtomicBoolean(false)
     private var d: SQLiteDatabase? = null
 
-    val lastError: String
-    get(){
-        return _lastError
-    }
 
     companion object {
-        var errorCallback:((String)->Unit)? = null
-        set(value){
-            instance.errorCallback = value
-        }
         fun initialize(context: Application, db_name: String = "") {
             if (db_name.isNotEmpty()) {
                 instance.db_name = db_name
@@ -79,28 +68,62 @@ class Sqlide {
                 return _instance!!
             }
 
+        data class BlockData(
+            val block: Block,
+            val callback: ((Any?) -> Unit)?
+        )
 
-        fun transact(block: Sqlide.() -> Unit) {
-            instance.blocks.add(block)
-            if (instance.running.get()) {
+        val blocks = ArrayList<BlockData>()
+        fun transaction(block: Sqlide.() -> Any?,callback: ((Any?)->Unit)? = null){
+            blocks.add(
+                BlockData(
+                    block, callback
+                )
+            )
+            if(instance.running.get()){
                 return
             }
-            instance._lastError = ""
-            instance.running.set(true)
-            GlobalScope.launch {
-                instance.d = instance.db
-                instance.d?.use { db ->
-                    instance.blocks.eat {
-                        var exception = db.transact {
-                            it(instance)
-                        }
-                        instance._lastError = exception?:""
-                    }
-                }
-                instance.d = null
-                instance.running.set(false)
-            }
+            process()
         }
+
+        private fun process() {
+            Thread{
+                if(blocks.size>0 && !instance.running.get()){
+                    val block = blocks.removeAt(0)
+                    instance.running.set(true)
+                    instance.d = instance.db
+                    instance.d?.use { db ->
+                        var result = db.transact {
+                            block.block(instance)
+                        }
+                        block.callback?.invoke(result)
+                    }
+                    instance.d = null
+                    instance.running.set(false)
+                    process()
+                }
+
+            }.start()
+
+        }
+
+        suspend operator fun invoke(block: Block?): Any? =
+            suspendCoroutine { cont ->
+                transaction({
+                    block?.invoke(this)
+                },{
+                    cont.resume(it)
+                })
+            }
+
+        suspend fun sqlide(block: Block?): Any? =
+            suspendCoroutine { cont ->
+                transaction({
+                    block?.invoke(this)
+                },{
+                    cont.resume(it)
+                })
+            }
     }
 
     fun columnCount(table_name: String): Int {
@@ -322,6 +345,10 @@ class Sqlide {
     }
 
     fun table(name: String): Table{
+        if(name.contains("\\s+".toRegex()))
+        {
+            return Table.create(name,d)
+        }
         return Table(name,d)
     }
 }
@@ -336,4 +363,3 @@ fun Sqlide.Kursor.TYPE.name(): String{
         Sqlide.Kursor.TYPE.FIELD_TYPE_UNKNOWN->"unknown"
     }
 }
-

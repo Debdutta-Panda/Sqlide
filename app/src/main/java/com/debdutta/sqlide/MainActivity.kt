@@ -1,56 +1,54 @@
 package com.debdutta.sqlide
 
+import android.app.DatePickerDialog
+import android.content.Context
+import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import kotlinx.coroutines.*
 import android.util.Log
+import android.view.View
+import android.widget.TextView
 import android.widget.Toast
+import androidx.annotation.RequiresApi
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.*
+import java.time.LocalDate
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 
 class MainActivity : AppCompatActivity() {
+    @RequiresApi(Build.VERSION_CODES.O)
+    private var dateStart = LocalDate.now()
+    @RequiresApi(Build.VERSION_CODES.O)
+    private var dateEnd = LocalDate.from(dateStart)
+    private var tv_text: TextView? = null
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        Sqlide.initialize(this.application)
-        Sqlide.errorCallback = {
-            Log.d("sqlide_debug","error = $it")
-        }
-        Sqlide.transact {
-            /*execute("""
-                CREATE TABLE IF NOT EXISTS contacts (
-                	contact_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                	first_name TEXT NOT NULL,
-                	last_name TEXT NOT NULL,
-                	email TEXT,
-                	phone TEXT
-                );
-            """.trimIndent())
-            val count = columnCount("contacts")
-
-            CoroutineScope(Dispatchers.Main).launch {
-                Toast.makeText(this@MainActivity, count.toString(), Toast.LENGTH_SHORT).show()
+        tv_text = findViewById(R.id.tv_text)
+        tv_text?.setOnClickListener {
+            lifecycleScope.launch() {
+                /*val result = Sqlide{
+                    Thread.sleep(5000)
+                    table("contacts").exists
+                }
+                Log.d("sqlide_debug","result 1 = ${result.toString()}")*/
+                Toast.makeText(this@MainActivity, "1="+Sqlide{
+                    Thread.sleep(5000)
+                    table("contacts").exists
+                }.toString(), Toast.LENGTH_SHORT).show()
             }
-            execute("""
-                INSERT INTO contacts (first_name,last_name)
-                VALUES( 'deb','pan');
-            """.trimIndent())
-            Log.d("sqlide_debug","${table("contacts").exists}")
-            Log.d("sqlide_debug","${query("select * from contacts").sheet[10][1]}")*/
-            var table = createTable("""
-                CREATE TABLE if not exists contacts_news (
-                	contact_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                	first_name TEXT NOT NULL,
-                	last_name TEXT NOT NULL,
-                	email TEXT,
-                	phone TEXT
-                );
-            """.trimIndent())
-            execute("""
-                INSERT INTO contacts_news (first_name,last_name)
-                VALUES( '${System.currentTimeMillis()}','pan');
-            """.trimIndent())
-            Log.d("sqlide_debug","${table.sheet()[20][1]}")
 
+            lifecycleScope.launch() {
+                val result = Sqlide{
+                    query("select * from contacts").columnCount
+                }
+                Log.d("sqlide_debug","result 2 = ${result.toString()}")
+                Toast.makeText(this@MainActivity, "2="+result.toString(), Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }
