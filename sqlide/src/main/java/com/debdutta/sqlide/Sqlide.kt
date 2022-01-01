@@ -1,24 +1,18 @@
 package com.debdutta.sqlide
 
 import android.app.Application
-import android.app.DatePickerDialog
+import android.content.ContentValues
 import android.content.Context
 import android.content.Context.MODE_PRIVATE
-import android.database.sqlite.SQLiteDatabase
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.*
 import android.database.Cursor
-import android.util.Log
+import android.database.sqlite.SQLiteDatabase
 import java.io.Closeable
-import java.lang.Exception
-import java.time.LocalDate
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 
 typealias Block = Sqlide.() -> Any?
-
-
 
 inline fun SQLiteDatabase.transact(block: SQLiteDatabase.() -> Any?): Any? {
     beginTransaction()
@@ -37,20 +31,22 @@ inline fun SQLiteDatabase.transact(block: SQLiteDatabase.() -> Any?): Any? {
     }
 }
 
-fun <T> ArrayList<T>.eat(block:(T)->Unit){
-    while (this.size>0){
-        block(this.removeAt(0))
-    }
-}
-class Sqlide {
-    private var blocks: ArrayList<Block> = ArrayList()
+class Sqlide private constructor(){
+    data class BlockData(
+        val block: Block,
+        val callback: ((Any?) -> Unit)?
+    )
+
     private var context: Context? = null
     private var db_name = "sqlide_db"
     private var running: AtomicBoolean = AtomicBoolean(false)
     private var d: SQLiteDatabase? = null
 
-
     companion object {
+
+        private var _instance: Sqlide? = null
+        val blocks = ArrayList<BlockData>()
+
         fun initialize(context: Application, db_name: String = "") {
             if (db_name.isNotEmpty()) {
                 instance.db_name = db_name
@@ -58,7 +54,6 @@ class Sqlide {
             instance.context = context
         }
 
-        private var _instance: Sqlide? = null
         private val instance: Sqlide
             get() {
                 if (_instance == null) {
@@ -68,13 +63,7 @@ class Sqlide {
                 return _instance!!
             }
 
-        data class BlockData(
-            val block: Block,
-            val callback: ((Any?) -> Unit)?
-        )
-
-        val blocks = ArrayList<BlockData>()
-        fun transaction(block: Sqlide.() -> Any?,callback: ((Any?)->Unit)? = null){
+        private fun transaction(block: Sqlide.() -> Any?, callback: ((Any?)->Unit)? = null){
             blocks.add(
                 BlockData(
                     block, callback
@@ -115,22 +104,6 @@ class Sqlide {
                     cont.resume(it)
                 })
             }
-
-        suspend fun sqlide(block: Block?): Any? =
-            suspendCoroutine { cont ->
-                transaction({
-                    block?.invoke(this)
-                },{
-                    cont.resume(it)
-                })
-            }
-    }
-
-    fun columnCount(table_name: String): Int {
-        val dbCursor = d?.query(table_name, null, null, null, null, null, null)
-        dbCursor.use { dbCursor ->
-            return dbCursor?.columnCount ?: 0
-        }
     }
 
     private val db: SQLiteDatabase
@@ -146,25 +119,25 @@ class Sqlide {
         return Kursor(d?.rawQuery(sql, null))
     }
 
-    fun createTable(query: String): Table{
-        return Table.create(query, d)
-    }
-
     class Sheet(private val kursor: Kursor){
+
         private val header = ArrayList<String>()
         private val body = ArrayList<ArrayList<Any?>>()
 
-        operator fun get(pos: Int): Row{
-            return Row(body.getOrNull(pos))
-        }
-
-        class Row(var array: ArrayList<Any?>?){
+        class Row(var array: ArrayList<*>?,var header: ArrayList<String>? = null){
+            val csv: String
+                get(){
+                    return array?.joinToString(",")?:""
+                }
             val size: Int
-            get(){
-                return array?.size?:0
-            }
+                get(){
+                    return array?.size?:0
+                }
             operator fun get(pos: Int): Any?{
                 return array?.getOrNull(pos)
+            }
+            operator fun get(colName: String): Any?{
+                return array?.getOrNull(header?.indexOf(colName)?:-1)
             }
         }
 
@@ -181,9 +154,32 @@ class Sqlide {
                 }
             }
         }
+
+        val csv: String
+        get(){
+            val sb = StringBuilder()
+            var h = Row(header)
+            sb.append(h.csv).append("\n")
+            body.forEach {
+                sb.append(Row(it).csv).append("\n")
+            }
+            return sb.toString()
+        }
+
+        operator fun get(pos: Int): Row{
+            return Row(body.getOrNull(pos),header)
+        }
     }
 
     class Kursor(private val cursor: Cursor?) : Closeable {
+        enum class TYPE{
+            FIELD_TYPE_UNKNOWN,
+            FIELD_TYPE_NULL,
+            FIELD_TYPE_INTEGER,
+            FIELD_TYPE_FLOAT,
+            FIELD_TYPE_STRING,
+            FIELD_TYPE_BLOB
+        }
         fun cell(row: Int, col: Int, def: Any? = null): Any?{
             to(row)
             return when(type(col)){
@@ -199,8 +195,7 @@ class Sqlide {
         fun cellInt(row: Int, col: Int, def: Int = 0): Int{return (cell(row,col,def) as? Int)?:def}
         fun cellFloat(row: Int, col: Int, def: Float = 0f): Float{return (cell(row,col,def) as? Float)?:def}
         fun cellString(row: Int, col: Int, def: String = ""): String{return (cell(row,col,def) as? String)?:def}
-        fun cellBlob(row: Int, col: Int): ByteArray{return (cell(row,col) as? ByteArray)?: ByteArray(0)
-        }
+        fun cellBlob(row: Int, col: Int): ByteArray{return (cell(row,col) as? ByteArray)?: ByteArray(0)}
 
         val count: Int
             get() {
@@ -261,14 +256,6 @@ class Sqlide {
         fun long(pos: Int, def: Long = 0): Long {return cursor?.getLong(pos) ?: def}
         fun float(pos: Int, def: Float = 0f): Float {return cursor?.getFloat(pos) ?: def}
         fun double(pos: Int, def: Double = 0.0): Double {return cursor?.getDouble(pos) ?: def}
-        enum class TYPE{
-            FIELD_TYPE_UNKNOWN,
-            FIELD_TYPE_NULL,
-            FIELD_TYPE_INTEGER,
-            FIELD_TYPE_FLOAT,
-            FIELD_TYPE_STRING,
-            FIELD_TYPE_BLOB
-        }
 
         fun type(pos: Int): TYPE {
             return when(cursor?.getType(pos)){
@@ -301,6 +288,29 @@ class Sqlide {
     }
 
     class Table(val name: String, private val db: SQLiteDatabase?){
+        fun drop(){
+            db?.execSQL("DROP TABLE IF EXISTS $name")
+        }
+        fun empty(){
+            db?.execSQL("DELETE FROM $name")
+        }
+        fun insert(cv: ContentValues){
+            db?.insert(name,null,cv)
+        }
+
+        fun insert(valuesCommand: String){
+            db?.execSQL("""
+                INSERT INTO $name $valuesCommand
+            """.trimIndent())
+        }
+
+        val columns: Array<String>
+        get(){
+            val dbCursor: Cursor? = db?.query(name, null, null, null, null, null, null)
+            val columnNames = dbCursor?.columnNames
+            dbCursor?.close()
+            return columnNames?: Array(0){""}
+        }
         val exists: Boolean
         get(){
             val query =
@@ -344,12 +354,34 @@ class Sqlide {
         }
     }
 
-    fun table(name: String): Table{
-        if(name.contains("\\s+".toRegex()))
+    fun table(nameOrDefinition: String): Table{
+        if(nameOrDefinition.contains("\\s+".toRegex()))
         {
-            return Table.create(name,d)
+            return Table.create(nameOrDefinition,d)
         }
-        return Table(name,d)
+        return Table(nameOrDefinition,d)
+    }
+
+    val tableNames: Array<String>
+    get(){
+        val arrTblNames = ArrayList<String>()
+        val c = d?.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null)
+
+        if (c?.moveToFirst()==true) {
+            while (c?.isAfterLast==false) {
+                arrTblNames.add(c.getString(c.getColumnIndex("name")))
+                c.moveToNext()
+            }
+        }
+        c?.close()
+        return arrTblNames.toTypedArray()
+    }
+
+    val tables: Array<Table>
+    get(){
+        return tableNames.map {
+            table(it)
+        }.toTypedArray()
     }
 }
 
