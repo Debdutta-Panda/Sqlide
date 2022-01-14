@@ -9,4 +9,4 @@ Add the following in settings.gradle
 
 Add the following in module level build.gradle
 
-`implementation 'com.github.Debdutta-Panda:Sqlide:1.0.2'`
+`implementation 'com.github.Debdutta-Panda:Sqlide:<latest_version>'`
