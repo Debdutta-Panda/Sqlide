@@ -12,4 +12,4 @@ Add the following in module level build.gradle
 `implementation 'com.github.Debdutta-Panda:Sqlide:<latest_version>'`
 
 # initilization
-Sqlide.initialize(this,"chat")
+`Sqlide.initialize(this,"chat")`
