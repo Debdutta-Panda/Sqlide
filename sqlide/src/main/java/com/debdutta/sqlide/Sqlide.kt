@@ -340,6 +340,9 @@ class Sqlide private constructor(){
     }
 
     class Table(val name: String, private val db: SQLiteDatabase?){
+        fun select(vararg columns: String): QueryBuilder{
+            return QueryBuilder(this).select(*columns)
+        }
         fun drop(){
             db?.execSQL("DROP TABLE IF EXISTS $name")
         }
