@@ -342,6 +342,8 @@ class Sqlide private constructor(){
         fun build(): String{
             return """
                 ${buildSelect()}
+                from
+                    ${table.name}
                 ${buildWhere()}
             """.trimIndent()
         }
