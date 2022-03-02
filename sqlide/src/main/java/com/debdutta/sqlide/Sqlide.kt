@@ -124,6 +124,19 @@ class Sqlide private constructor(){
         private val header = ArrayList<String>()
         private val body = ArrayList<ArrayList<Any?>>()
 
+        private var _rowCount = 0
+        private var _colCount = 0
+
+        val rowCount: Int
+        get(){
+            return _rowCount
+        }
+
+        val colCount: Int
+            get(){
+                return _colCount
+            }
+
         class Row(var array: ArrayList<*>?,var header: ArrayList<String>? = null){
             val csv: String
                 get(){
@@ -142,14 +155,14 @@ class Sqlide private constructor(){
         }
 
         init {
-            val rowCount = kursor.count
-            val colCount = kursor.columnCount
-            for(i in 0 until colCount){
+            _rowCount = kursor.count
+            _colCount = kursor.columnCount
+            for(i in 0 until _colCount){
                 header.add(kursor.columnName(i))
             }
-            for(i in 0 until rowCount){
+            for(i in 0 until _rowCount){
                 body.add(ArrayList())
-                for(j in 0 until colCount){
+                for(j in 0 until _colCount){
                     body[i].add(kursor.cell(i,j))
                 }
             }
