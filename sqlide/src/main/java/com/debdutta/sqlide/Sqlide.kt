@@ -334,9 +334,7 @@ class Sqlide private constructor(){
                 return """
                     select
                         ${                        
-                            c.map {
-                                "`$it`"
-                            }.joinToString(",")
+                            c.joinToString(",")
                         }
                 """.trimIndent()
             }
