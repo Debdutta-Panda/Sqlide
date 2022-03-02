@@ -54,7 +54,7 @@ afterEvaluate {
                 // You can then customize attributes of the publication as shown below.
                 groupId = 'com.github.Debdutta-Panda.Sqlide'
                 artifactId = 'Sqlide'
-                version = '1.0.0'
+                version = '1.0.4'
             }
         }
     }

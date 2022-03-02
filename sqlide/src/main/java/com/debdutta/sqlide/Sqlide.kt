@@ -287,6 +287,58 @@ class Sqlide private constructor(){
             }
     }
 
+    class QueryBuilder(private var table: Table){
+        val columns = mutableListOf<String>()
+        var where = ""
+        fun select(vararg columns: String): QueryBuilder{
+            this.columns.addAll(columns)
+            return this
+        }
+        fun where(where: String): QueryBuilder{
+            this.where = where
+            return this
+        }
+        fun buildWhere(): String{
+            if(where.isEmpty()){
+                return ""
+            }
+            else{
+                return """
+                    where
+                        $where
+                """.trimIndent()
+            }
+        }
+        fun buildSelect(): String{
+            val c = columns
+            .filter {
+                it.isNotEmpty()
+            }
+            if(c.isEmpty()){
+                return "select *"
+            }
+            else{
+                return """
+                    select
+                        ${                        
+                            c.map {
+                                "`$it`"
+                            }.joinToString(",")
+                        }
+                """.trimIndent()
+            }
+        }
+        fun build(): String{
+            return """
+                ${buildSelect()}
+                ${buildWhere()}
+            """.trimIndent()
+        }
+        fun get():Sheet{
+            return table.sheet(build())
+        }
+    }
+
     class Table(val name: String, private val db: SQLiteDatabase?){
         fun drop(){
             db?.execSQL("DROP TABLE IF EXISTS $name")
